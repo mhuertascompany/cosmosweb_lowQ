@@ -45,14 +45,30 @@ from zoobot.pytorch.predictions import predict_on_catalog
 from zoobot.pytorch.training import finetune
 
 # Visual morphology labels of interest
-CLASS_COLUMNS: List[str] = [
+ALL_CLASS_COLUMNS: List[str] = [
     'ELL_REGULAR', 'ELL_INTER', 'ELL_DISTURB',
     'S0_REGULAR', 'S0_INTER', 'S0_DISTURB',
     'EDISK_REGULAR', 'EDISK_INTER', 'EDISK_DISTURB',
     'LDISK_REGULAR', 'LDISK_INTER', 'LDISK_DISTURB'
 ]
-CLASS_TO_ID = {name: idx for idx, name in enumerate(CLASS_COLUMNS)}
-ID_TO_CLASS = {idx: name for name, idx in CLASS_TO_ID.items()}
+REGULAR_CLASS_COLUMNS: List[str] = [col for col in ALL_CLASS_COLUMNS if col.endswith('REGULAR')]
+
+# default label set, can be updated at runtime via CLI flag
+LABEL_COLUMNS: List[str] = ALL_CLASS_COLUMNS.copy()
+
+
+def set_label_columns(label_set: str) -> None:
+    global LABEL_COLUMNS
+    if label_set == 'regular':
+        LABEL_COLUMNS = REGULAR_CLASS_COLUMNS.copy()
+    else:
+        LABEL_COLUMNS = ALL_CLASS_COLUMNS.copy()
+
+
+def label_name_mappings() -> tuple[dict[str, int], dict[int, str]]:
+    class_to_id = {name: idx for idx, name in enumerate(LABEL_COLUMNS)}
+    id_to_class = {idx: name for name, idx in class_to_id.items()}
+    return class_to_id, id_to_class
 
 
 class To3d:
@@ -119,6 +135,8 @@ def parse_args() -> argparse.Namespace:
                         help="Optional CSV to store per-class softmax predictions on the test split.")
     parser.add_argument('--n-predict-samples', type=int, default=1,
                         help="If supported, number of stochastic forward passes for predictions.")
+    parser.add_argument('--label-set', choices=['all', 'regular'], default='regular',
+                        help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
     parser.add_argument('--export-splits-dir', type=Path, default=None,
                         help="If set, save train/val/test catalog CSVs (with labels) to this directory.")
     parser.add_argument('--use-class-weights', action='store_true',
@@ -153,15 +171,15 @@ def load_visual_catalog(path: Optional[Path], table: str) -> pd.DataFrame:
         elif suffix in {'.feather'}:
             df_visual = pd.read_feather(path)
         elif suffix in {'.db', '.sqlite'}:
-            query = f"SELECT id, {', '.join(CLASS_COLUMNS)} FROM {table}"
+            query = f"SELECT id, {', '.join(LABEL_COLUMNS)} FROM {table}"
             with sqlite3.connect(path) as conn:
                 df_visual = pd.read_sql_query(query, conn)
         else:
             raise ValueError(f"Unsupported label file type: {suffix}")
-    missing = [col for col in ['id', *CLASS_COLUMNS] if col not in df_visual.columns]
+    missing = [col for col in ['id', *LABEL_COLUMNS] if col not in df_visual.columns]
     if missing:
         raise ValueError(f"Missing required columns in visual table: {missing}")
-    return df_visual[['id', *CLASS_COLUMNS]].copy()
+    return df_visual[['id', *LABEL_COLUMNS]].copy()
 
 
 def attach_stamps(
@@ -216,7 +234,7 @@ def attach_stamps(
         if not file_loc.exists():
             missing_files += 1
             continue
-        labels = np.array([getattr(record, col) for col in CLASS_COLUMNS], dtype=float)
+        labels = np.array([getattr(record, col) for col in LABEL_COLUMNS], dtype=float)
         labels = np.nan_to_num(labels, nan=0.0)
         if labels.sum() == 0:
             unlabeled += 1
@@ -231,7 +249,7 @@ def attach_stamps(
             'id_str': str(clean_id),
             'file_loc': str(file_loc),
             'label': class_idx,
-            **{col: getattr(record, col) for col in CLASS_COLUMNS}
+            **{col: getattr(record, col) for col in LABEL_COLUMNS}
         })
 
     logging.info(
@@ -322,7 +340,7 @@ def build_torchvision_eval_transform(image_size: int) -> Tv2.Compose:
 
 
 def compute_weights(train_catalog: pd.DataFrame) -> np.ndarray:
-    classes = np.array(sorted(ID_TO_CLASS.keys()))
+    classes = np.arange(len(LABEL_COLUMNS))
     weights = compute_class_weight(
         class_weight='balanced',
         classes=classes,
@@ -421,7 +439,7 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
 
     model = finetune.FinetuneableZoobotClassifier(
         name=args.encoder_name,
-        num_classes=len(CLASS_COLUMNS),
+        num_classes=len(LABEL_COLUMNS),
         label_col='label',
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
@@ -452,7 +470,8 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         patience=args.patience,
         accelerator=args.accelerator,
         devices=args.devices,
-        precision=args.precision
+        precision=args.precision,
+        file_template=f"{args.label_set}_{{epoch}}"
     )
 
     logging.info("Starting finetuning with encoder %s", args.encoder_name)
@@ -470,7 +489,7 @@ def run_predictions(
     if args.prediction_csv is None:
         return
 
-    prediction_cols = [f"p_{name}" for name in CLASS_COLUMNS]
+    prediction_cols = [f"p_{name}" for name in LABEL_COLUMNS]
     eval_transform = build_eval_transform(args.image_size)
 
     predict_kwargs = dict(
@@ -496,6 +515,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s"
     )
+    set_label_columns(args.label_set)
+    logging.info("Using label set '%s' with columns: %s", args.label_set, ', '.join(LABEL_COLUMNS))
     L.seed_everything(args.seed, workers=True)
 
     model, datamodule, _, _, test_catalog = finetune_model(args)
