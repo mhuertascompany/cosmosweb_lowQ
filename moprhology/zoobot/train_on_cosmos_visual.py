@@ -278,7 +278,7 @@ def stratified_splits(
 
 def build_train_transforms(image_size: int, crop_scale: Iterable[float], crop_ratio: Iterable[float]) -> A.Compose:
     return A.Compose([
-        A.Lambda(image=To3d(), always_apply=True),
+        A.Lambda(image=To3d(), p=1.0),
         A.Rotate(limit=180, interpolation=1, border_mode=0, value=0, always_apply=True),
         A.RandomResizedCrop(
             height=image_size,
