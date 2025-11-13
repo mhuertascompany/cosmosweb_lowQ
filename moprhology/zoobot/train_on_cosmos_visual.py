@@ -111,9 +111,9 @@ def parse_args() -> argparse.Namespace:
                         help="Scale bounds for RandomResizedCrop.")
     parser.add_argument('--crop-ratio', type=float, nargs=2, default=(0.9, 1.1),
                         help="Aspect ratio bounds for RandomResizedCrop.")
-    parser.add_argument('--learning-rate', type=float, default=5e-5, help="AdamW learning rate.")
+    parser.add_argument('--learning-rate', type=float, default=5e-4, help="AdamW learning rate.")
     parser.add_argument('--weight-decay', type=float, default=0.05, help="AdamW weight decay.")
-    parser.add_argument('--layer-decay', type=float, default=0.5,
+    parser.add_argument('--layer-decay', type=float, default=0.75,
                         help="Layer-wise LR decay applied inside Zoobot.")
     parser.add_argument('--head-dropout', type=float, default=0.5,
                         help="Dropout probability inside the classification head.")
