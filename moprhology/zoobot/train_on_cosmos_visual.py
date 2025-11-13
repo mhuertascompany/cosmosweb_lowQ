@@ -119,6 +119,8 @@ def parse_args() -> argparse.Namespace:
                         help="Optional CSV to store per-class softmax predictions on the test split.")
     parser.add_argument('--n-predict-samples', type=int, default=1,
                         help="If supported, number of stochastic forward passes for predictions.")
+    parser.add_argument('--export-splits-dir', type=Path, default=None,
+                        help="If set, save train/val/test catalog CSVs (with labels) to this directory.")
     parser.add_argument('--use-class-weights', action='store_true',
                         help="Enable balanced class weights inside the cross-entropy loss.")
     parser.add_argument('--keep-ambiguous', action='store_true',
@@ -393,6 +395,14 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         "Split sizes -> train: %d, val: %d, test: %d",
         len(train_catalog), len(val_catalog), len(test_catalog)
     )
+
+    if args.export_splits_dir is not None:
+        splits_dir = args.export_splits_dir.expanduser()
+        splits_dir.mkdir(parents=True, exist_ok=True)
+        train_catalog.to_csv(splits_dir / 'train_catalog.csv', index=False)
+        val_catalog.to_csv(splits_dir / 'val_catalog.csv', index=False)
+        test_catalog.to_csv(splits_dir / 'test_catalog.csv', index=False)
+        logging.info("Saved split catalogs to %s", splits_dir)
 
     class_weights = compute_weights(train_catalog) if args.use_class_weights else None
 
