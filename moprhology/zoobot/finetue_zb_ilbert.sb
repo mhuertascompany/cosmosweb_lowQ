@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=denario_desi_euclid
+#SBATCH --output=/n03data/huertas/COSMOS-Web/ilbert_finetune/zoobot.out
+#SBATCH --error=/n03data/huertas/COSMOS-Web/ilbert_finetune/zoobot.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --nodelist=n03
+#SBATCH --cpus-per-task=4
+#SBATCH --time=48:00:00
+#SBATCH --gres=gpu:1
+
+
+source ~/.bashrc
+conda activate /n03data/huertas/python/miniconda3/envs/cosmos_visual/
+
+cd /n03data/huertas/python/cosmosweb_lowq
+
+python -m /n03data/huertas/python/cosmosweb_lowq/train_on_cosmos_visual.py --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps/f150w --visual-labels /n07data/ilbert/COSMOS-Web/photoz_MASTER_v3.1.0/MORPHO/visualmorpho_COSMOSWeb_v7.db --sqlite-table morphology --filter-name F150W --save-dir /n03data/huertas/COSMOS-Web/zoobot/models/ilbert_finetune --prediction-csv /n03data/huertas/COSMOS-Web/ilbert_finetune/test_set.csv 
+
