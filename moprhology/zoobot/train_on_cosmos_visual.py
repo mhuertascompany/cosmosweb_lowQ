@@ -34,7 +34,7 @@ import numpy as np
 import pandas as pd
 import torch
 import math
-import torchvision.transforms as T
+import torchvision.transforms.v2 as Tv2
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -303,23 +303,25 @@ def build_eval_transform(image_size: int):
     return get_galaxy_transform(cfg)
 
 
-def build_torchvision_train_transform(image_size: int, crop_scale: Iterable[float], crop_ratio: Iterable[float]) -> T.Compose:
-    return T.Compose([
-        T.Grayscale(num_output_channels=3),
-        T.RandomRotation(180),
-        T.RandomResizedCrop(size=image_size, scale=tuple(crop_scale), ratio=tuple(crop_ratio)),
-        T.RandomHorizontalFlip(),
-        T.RandomVerticalFlip(),
-        T.ToTensor(),
+def build_torchvision_train_transform(image_size: int, crop_scale: Iterable[float], crop_ratio: Iterable[float]) -> Tv2.Compose:
+    return Tv2.Compose([
+        Tv2.Grayscale(num_output_channels=3),
+        Tv2.RandomRotation(180),
+        Tv2.RandomResizedCrop(size=image_size, scale=tuple(crop_scale), ratio=tuple(crop_ratio)),
+        Tv2.RandomHorizontalFlip(),
+        Tv2.RandomVerticalFlip(),
+        Tv2.ToImage(),
+        Tv2.ToDtype(torch.float32, scale=True),
     ])
 
 
-def build_torchvision_eval_transform(image_size: int) -> T.Compose:
-    return T.Compose([
-        T.Grayscale(num_output_channels=3),
-        T.Resize(image_size),
-        T.CenterCrop(image_size),
-        T.ToTensor(),
+def build_torchvision_eval_transform(image_size: int) -> Tv2.Compose:
+    return Tv2.Compose([
+        Tv2.Grayscale(num_output_channels=3),
+        Tv2.Resize(image_size),
+        Tv2.CenterCrop(image_size),
+        Tv2.ToImage(),
+        Tv2.ToDtype(torch.float32, scale=True),
     ])
 
 
