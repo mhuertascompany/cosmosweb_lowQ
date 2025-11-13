@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --job-name=cosmos_finetune
+#SBATCH --output=/n03data/huertas/COSMOS-Web/ilbert_finetune/zoobot.out
+#SBATCH --error=/n03data/huertas/COSMOS-Web/ilbert_finetune/zoobot.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --nodelist=n03
+#SBATCH --cpus-per-task=4
+#SBATCH --time=00:10:00
+#SBATCH --gres=gpu:1
+
+
+source /n03data/huertas/python/miniconda3/etc/profile.d/conda.sh
+conda activate /n03data/huertas/python/miniconda3/envs/cosmos_visual/
+
+cd /n03data/huertas/python/cosmosweb_lowQ
+
+python plot_regular_examples.py --catalog /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/train_catalog.csv --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps/f150w --filter-name F150W --filename-template "{filter}_{id}.jpg" --samples-per-class 6 --output /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/regular_examples.pdf
+
