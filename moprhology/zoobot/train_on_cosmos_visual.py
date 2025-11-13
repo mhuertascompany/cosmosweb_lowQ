@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 import torch
 import math
+import torchvision.transforms as T
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -302,6 +303,26 @@ def build_eval_transform(image_size: int):
     return get_galaxy_transform(cfg)
 
 
+def build_torchvision_train_transform(image_size: int, crop_scale: Iterable[float], crop_ratio: Iterable[float]) -> T.Compose:
+    return T.Compose([
+        T.Grayscale(num_output_channels=3),
+        T.RandomRotation(180),
+        T.RandomResizedCrop(size=image_size, scale=tuple(crop_scale), ratio=tuple(crop_ratio)),
+        T.RandomHorizontalFlip(),
+        T.RandomVerticalFlip(),
+        T.ToTensor(),
+    ])
+
+
+def build_torchvision_eval_transform(image_size: int) -> T.Compose:
+    return T.Compose([
+        T.Grayscale(num_output_channels=3),
+        T.Resize(image_size),
+        T.CenterCrop(image_size),
+        T.ToTensor(),
+    ])
+
+
 def compute_weights(train_catalog: pd.DataFrame) -> np.ndarray:
     classes = np.array(sorted(ID_TO_CLASS.keys()))
     weights = compute_class_weight(
@@ -319,7 +340,10 @@ def create_datamodule(
     test_catalog: pd.DataFrame,
     train_transform: A.Compose,
     batch_size: int,
-    num_workers: int
+    num_workers: int,
+    image_size: int,
+    crop_scale: Iterable[float],
+    crop_ratio: Iterable[float]
 ) -> GalaxyDataModule:
     kwargs = dict(
         label_cols=['label'],
@@ -333,8 +357,13 @@ def create_datamodule(
         kwargs['custom_albumentation_transform'] = train_transform
         return GalaxyDataModule(**kwargs)
     except TypeError:
-        logging.warning("Installed galaxy-datasets version does not accept custom_albumentation_transform; falling back to defaults.")
+        logging.warning(
+            "Installed galaxy-datasets version does not accept custom_albumentation_transform; "
+            "falling back to torchvision transforms."
+        )
         kwargs.pop('custom_albumentation_transform', None)
+        kwargs['train_transform'] = build_torchvision_train_transform(image_size, crop_scale, crop_ratio)
+        kwargs['test_transform'] = build_torchvision_eval_transform(image_size)
         return GalaxyDataModule(**kwargs)
 
 
@@ -378,7 +407,10 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         test_catalog,
         train_transform,
         args.batch_size,
-        args.num_workers
+        args.num_workers,
+        args.image_size,
+        args.crop_scale,
+        args.crop_ratio
     )
 
     model = finetune.FinetuneableZoobotClassifier(
