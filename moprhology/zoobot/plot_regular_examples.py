@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from . import train_on_cosmos_visual as cosmos
+from moprhology.zoobot import train_on_cosmos_visual as cosmos
 
 
 def parse_args() -> argparse.Namespace:
@@ -162,4 +162,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
