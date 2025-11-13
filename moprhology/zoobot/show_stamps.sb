@@ -15,5 +15,6 @@ conda activate /n03data/huertas/python/miniconda3/envs/cosmos_visual/
 
 cd /n03data/huertas/python/cosmosweb_lowQ
 
-python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/plot_regular_examples.py --catalog /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/train_catalog.csv --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps/f150w --filter-name F150W --filename-template "{filter}_{id}.jpg" --samples-per-class 6 --output /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/regular_examples.pdf
+#python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/plot_regular_examples.py --catalog /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/train_catalog.csv --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps/f150w --filter-name F150W --filename-template "{filter}_{id}.jpg" --samples-per-class 6 --output /n03data/huertas/COSMOS-Web/ilbert_finetune/regular/regular_examples.pdf
 
+python -m moprhology.zoobot.rebuild_visual_stamps --visual-db /n07data/ilbert/COSMOS-Web/photoz_MASTER_v3.1.0/MORPHO/visualmorpho_COSMOSWeb_v7.db --table morphology --coord-column INFO --filters F115W F150W F277W F444W --output-root /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert --arcsec-size 2.5 --resize-px 424
