@@ -33,6 +33,7 @@ import lightning as L
 import numpy as np
 import pandas as pd
 import torch
+import math
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -172,7 +173,22 @@ def attach_stamps(
     if not stamp_dir.exists():
         raise FileNotFoundError(f"Stamp directory {stamp_dir} does not exist.")
 
-    preview = df_visual['id'].head(10).tolist()
+    def sanitize_id(raw_id):
+        if isinstance(raw_id, (int, np.integer)):
+            return int(raw_id)
+        if isinstance(raw_id, (float, np.floating)):
+            if math.isfinite(raw_id):
+                rounded = round(float(raw_id))
+                if abs(float(raw_id) - rounded) < 1e-6:
+                    return int(rounded)
+        if isinstance(raw_id, str):
+            try:
+                return int(raw_id)
+            except ValueError:
+                return raw_id
+        return raw_id
+
+    preview = [sanitize_id(pid) for pid in df_visual['id'].head(10).tolist()]
     preview_paths = [
         stamp_dir / filename_template.format(filter=filter_name, id=pid)
         for pid in preview
@@ -192,7 +208,8 @@ def attach_stamps(
     unlabeled = 0
 
     for record in df_visual.itertuples(index=False):
-        file_loc = stamp_dir / filename_template.format(filter=filter_name, id=record.id)
+        clean_id = sanitize_id(record.id)
+        file_loc = stamp_dir / filename_template.format(filter=filter_name, id=clean_id)
         if not file_loc.exists():
             missing_files += 1
             continue
@@ -208,7 +225,7 @@ def attach_stamps(
             continue
         class_idx = int(positives[0] if len(positives) else np.argmax(labels))
         rows.append({
-            'id_str': str(record.id),
+            'id_str': str(clean_id),
             'file_loc': str(file_loc),
             'label': class_idx,
             **{col: getattr(record, col) for col in CLASS_COLUMNS}
