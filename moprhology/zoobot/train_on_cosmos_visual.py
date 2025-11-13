@@ -39,7 +39,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 
 from galaxy_datasets.pytorch.galaxy_datamodule import CatalogDataModule as GalaxyDataModule
-from galaxy_datasets.transforms import get_galaxy_transform, minimal_view_config
 
 from zoobot.pytorch.predictions import predict_on_catalog
 from zoobot.pytorch.training import finetune
@@ -95,9 +94,9 @@ def parse_args() -> argparse.Namespace:
                         help="Scale bounds for RandomResizedCrop.")
     parser.add_argument('--crop-ratio', type=float, nargs=2, default=(0.9, 1.1),
                         help="Aspect ratio bounds for RandomResizedCrop.")
-    parser.add_argument('--learning-rate', type=float, default=1e-4, help="AdamW learning rate.")
+    parser.add_argument('--learning-rate', type=float, default=5e-5, help="AdamW learning rate.")
     parser.add_argument('--weight-decay', type=float, default=0.05, help="AdamW weight decay.")
-    parser.add_argument('--layer-decay', type=float, default=0.75,
+    parser.add_argument('--layer-decay', type=float, default=0.5,
                         help="Layer-wise LR decay applied inside Zoobot.")
     parser.add_argument('--head-dropout', type=float, default=0.5,
                         help="Dropout probability inside the classification head.")
@@ -294,13 +293,7 @@ def build_train_transforms(image_size: int, crop_scale: Iterable[float], crop_ra
 
 
 def build_eval_transform(image_size: int):
-    cfg = minimal_view_config()
-    cfg.output_size = image_size
-    cfg.random_affine = dict(degrees=0, translate=None, scale=(1.0, 1.0), shear=None)
-    cfg.center_crop = True
-    cfg.random_resized_crop = False
-    cfg.flip_prob = 0.0
-    return get_galaxy_transform(cfg)
+    return build_torchvision_eval_transform(image_size)
 
 
 def build_torchvision_train_transform(image_size: int, crop_scale: Iterable[float], crop_ratio: Iterable[float]) -> Tv2.Compose:
