@@ -281,8 +281,7 @@ def build_train_transforms(image_size: int, crop_scale: Iterable[float], crop_ra
         A.Lambda(image=To3d(), p=1.0),
         A.Rotate(limit=180, interpolation=1, border_mode=0, value=0, always_apply=True),
         A.RandomResizedCrop(
-            height=image_size,
-            width=image_size,
+            size=(image_size, image_size),
             scale=tuple(crop_scale),
             ratio=tuple(crop_ratio),
             interpolation=1,
