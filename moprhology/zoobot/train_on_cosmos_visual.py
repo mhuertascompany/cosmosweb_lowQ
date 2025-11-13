@@ -33,6 +33,7 @@ import lightning as L
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 import math
 import torchvision.transforms.v2 as Tv2
 from sklearn.model_selection import train_test_split
@@ -420,6 +421,17 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         class_weights=class_weights,
         prog_bar=not args.disable_progbar
     )
+    if model.class_weights is not None:
+        def safe_loss(y_pred, y):
+            weight = model.class_weights.to(device=y.device, dtype=torch.float32)
+            return torch.nn.functional.cross_entropy(
+                y_pred,
+                y.long(),
+                weight=weight,
+                label_smoothing=model.label_smoothing,
+                reduction='none'
+            )
+        model.loss = safe_loss
 
     args.save_dir.mkdir(parents=True, exist_ok=True)
     require_gpu(args.accelerator)
