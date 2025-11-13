@@ -10,7 +10,7 @@
 #SBATCH --gres=gpu:1
 
 
-source ~/.bashrc
+source /n03data/huertas/python/miniconda3/etc/profile.d/conda.sh
 conda activate /n03data/huertas/python/miniconda3/envs/cosmos_visual/
 
 cd /n03data/huertas/python/cosmosweb_lowQ
