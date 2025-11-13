@@ -114,7 +114,10 @@ def main():
         obj_id = getattr(row, "id", None)
         if obj_id is None or str(obj_id).strip() == "":
             obj_id = coord_id
-        obj_id = str(obj_id)
+        try:
+            obj_id = str(int(float(obj_id)))
+        except ValueError:
+            obj_id = str(obj_id)
 
         try:
             _, _, sci_imas, *_ = load_imgs(tile)
