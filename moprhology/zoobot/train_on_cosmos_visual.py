@@ -172,6 +172,20 @@ def attach_stamps(
     if not stamp_dir.exists():
         raise FileNotFoundError(f"Stamp directory {stamp_dir} does not exist.")
 
+    preview = df_visual['id'].head(10).tolist()
+    preview_paths = [
+        stamp_dir / filename_template.format(filter=filter_name, id=pid)
+        for pid in preview
+    ]
+    logging.info(
+        "First visual IDs: %s",
+        ", ".join(str(pid) for pid in preview)
+    )
+    logging.info(
+        "Corresponding expected stamp files: %s",
+        ", ".join(str(path) for path in preview_paths)
+    )
+
     rows = []
     missing_files = 0
     ambiguous = 0
