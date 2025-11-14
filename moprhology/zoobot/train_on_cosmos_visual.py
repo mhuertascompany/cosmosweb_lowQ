@@ -355,8 +355,10 @@ def load_redshift_lookup(
                 )
             def to_native(arr):
                 arr = np.asarray(arr)
-                if arr.dtype.byteorder == '>' or (arr.dtype.byteorder == '=' and np.little_endian is False):
-                    arr = arr.byteswap().newbyteorder()
+                dtype = arr.dtype
+                if dtype.byteorder == '>' or (dtype.byteorder == '=' and np.little_endian is False):
+                    dtype = dtype.newbyteorder('<')
+                    arr = arr.byteswap().view(dtype)
                 return arr
 
             redshift_df = pd.DataFrame({
