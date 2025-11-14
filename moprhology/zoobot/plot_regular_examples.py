@@ -49,13 +49,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stamp-dir",
         type=Path,
-        default=None,
-        help="Directory with stamp JPEGs. Required if catalog lacks 'file_loc'.",
+        default=Path("/n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert"),
+        help="Root directory with stamp JPEGs. For rest-frame mode, expect per-filter subfolders.",
     )
     parser.add_argument(
         "--filter-name",
         default="F150W",
-        help="Filter prefix used in stamp filenames (default: %(default)s).",
+        help="Filter prefix used in stamp filenames (ignored in rest-frame mode).",
     )
     parser.add_argument(
         "--filename-template",
@@ -80,23 +80,48 @@ def parse_args() -> argparse.Namespace:
         default=42,
         help="Random seed for reproducibility.",
     )
+    parser.add_argument(
+        "--rest-frame",
+        action="store_true",
+        help="Use rest-frame stamps stored in per-filter folders under --stamp-dir.",
+    )
+    parser.add_argument(
+        "--redshift-table",
+        type=Path,
+        default=None,
+        help="CSV/TSV/Parquet table containing 'id_str' and 'zfinal' columns (only needed for rest-frame mode).",
+    )
+    parser.add_argument(
+        "--redshift-value-column",
+        default="zfinal",
+        help="Column containing redshift values when --rest-frame is enabled.",
+    )
     return parser.parse_args()
 
 
 def resolve_file_loc(
     row: pd.Series,
-    stamp_dir: Optional[Path],
+    stamp_dir: Path,
     filename_template: str,
     filter_name: str,
+    rest_frame: bool,
 ) -> Path:
-    if "file_loc" in row and isinstance(row["file_loc"], str):
+    if "file_loc" in row and isinstance(row["file_loc"], str) and not rest_frame:
         path = Path(row["file_loc"])
         if path.is_file():
             return path
-    if stamp_dir is None:
-        raise FileNotFoundError(
-            "Catalog row lacks 'file_loc' and --stamp-dir was not provided."
-        )
+
+    if rest_frame:
+        if "filter_used" in row and isinstance(row["filter_used"], str):
+            filt = row["filter_used"]
+        elif "zfinal" in row:
+            filt = cosmos.select_rest_frame_filter(row["zfinal"])
+        else:
+            raise ValueError("Rest-frame mode requires 'filter_used' or 'zfinal' in the catalog.")
+        if filt is None:
+            raise ValueError("Unable to determine rest-frame filter for row %s" % row)
+        return stamp_dir / filt / filename_template.format(filter=filt, id=row["id_str"])
+
     return stamp_dir / filename_template.format(filter=filter_name, id=row["id_str"])
 
 
@@ -118,7 +143,19 @@ def main():
     if "label" not in catalog.columns or "id_str" not in catalog.columns:
         raise ValueError("Catalog must contain 'id_str' and 'label' columns.")
 
-    stamp_dir = args.stamp_dir.expanduser().resolve() if args.stamp_dir else None
+    stamp_dir = args.stamp_dir.expanduser().resolve()
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.rest_frame:
+        if "filter_used" not in catalog.columns and args.redshift_table is None:
+            raise ValueError("Rest-frame mode requires 'filter_used' in catalog or --redshift-table with redshifts.")
+        if "filter_used" not in catalog.columns:
+            ztable = pd.read_csv(args.redshift_table)
+            if "id_str" not in ztable.columns or args.redshift_value_column not in ztable.columns:
+                raise ValueError("Redshift table must contain 'id_str' and the specified z column.")
+            zlookup = ztable.set_index('id_str')[args.redshift_value_column]
+            catalog['zfinal'] = catalog['id_str'].map(zlookup)
+
     rng = random.Random(args.seed)
 
     grouped: Dict[int, pd.DataFrame] = {
@@ -149,6 +186,7 @@ def main():
                         stamp_dir=stamp_dir,
                         filename_template=args.filename_template,
                         filter_name=args.filter_name,
+                        rest_frame=args.rest_frame,
                     )
                     image = load_image(path)
                     ax.imshow(image, cmap="gray")

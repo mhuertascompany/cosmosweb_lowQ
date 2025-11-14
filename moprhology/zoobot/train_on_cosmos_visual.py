@@ -71,6 +71,16 @@ def label_name_mappings() -> tuple[dict[str, int], dict[int, str]]:
     return class_to_id, id_to_class
 
 
+def select_rest_frame_filter(z_value: float) -> Optional[str]:
+    if pd.isna(z_value):
+        return None
+    if z_value < 1.0:
+        return 'F150W'
+    if z_value < 3.0:
+        return 'F277W'
+    return 'F444W'
+
+
 class To3d:
     """Albumentations-compatible helper to triplicate a greyscale cutout."""
 
@@ -137,6 +147,10 @@ def parse_args() -> argparse.Namespace:
                         help="If supported, number of stochastic forward passes for predictions.")
     parser.add_argument('--label-set', choices=['all', 'regular'], default='regular',
                         help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
+    parser.add_argument('--redshift-table', type=Path, default=None,
+                        help="Optional table with columns for ID and redshift (used when --filter-name rest-frame).")
+    parser.add_argument('--redshift-id-column', default='id', help="Column containing object IDs in the redshift table.")
+    parser.add_argument('--redshift-value-column', default='zfinal', help="Column containing redshift values.")
     parser.add_argument('--export-splits-dir', type=Path, default=None,
                         help="If set, save train/val/test catalog CSVs (with labels) to this directory.")
     parser.add_argument('--use-class-weights', action='store_true',
@@ -187,7 +201,10 @@ def attach_stamps(
     stamp_dir: Path,
     filename_template: str,
     filter_name: str,
-    keep_ambiguous: bool
+    keep_ambiguous: bool,
+    rest_frame: bool = False,
+    redshift_lookup: Optional[pd.Series] = None,
+    rest_stamp_root: Optional[Path] = None
 ) -> pd.DataFrame:
     """Build catalog rows that include the stamp path and encoded label."""
     stamp_dir = stamp_dir.expanduser().resolve()
@@ -209,28 +226,54 @@ def attach_stamps(
                 return raw_id
         return raw_id
 
-    preview = [sanitize_id(pid) for pid in df_visual['id'].head(10).tolist()]
-    preview_paths = [
-        stamp_dir / filename_template.format(filter=filter_name, id=pid)
-        for pid in preview
-    ]
-    logging.info(
-        "First visual IDs: %s",
-        ", ".join(str(pid) for pid in preview)
-    )
-    logging.info(
-        "Corresponding expected stamp files: %s",
-        ", ".join(str(path) for path in preview_paths)
-    )
+    if rest_frame:
+        logging.info("Rest-frame mode enabled. Stamp locations depend on per-object redshift.")
+    else:
+        preview = [sanitize_id(pid) for pid in df_visual['id'].head(10).tolist()]
+        preview_paths = [
+            stamp_dir / filename_template.format(filter=filter_name, id=pid)
+            for pid in preview
+        ]
+        logging.info(
+            "First visual IDs: %s",
+            ", ".join(str(pid) for pid in preview)
+        )
+        logging.info(
+            "Corresponding expected stamp files: %s",
+            ", ".join(str(path) for path in preview_paths)
+        )
 
     rows = []
     missing_files = 0
     ambiguous = 0
     unlabeled = 0
 
+    if rest_frame and rest_stamp_root is None:
+        raise RuntimeError("Rest-frame mode requires rest_stamp_root to be provided.")
+
+    redshift_series = None
+    if rest_frame:
+        if redshift_lookup is None:
+            raise RuntimeError("Rest-frame mode requires redshift_lookup data.")
+        redshift_series = redshift_lookup
+
     for record in df_visual.itertuples(index=False):
         clean_id = sanitize_id(record.id)
-        file_loc = stamp_dir / filename_template.format(filter=filter_name, id=clean_id)
+        selected_filter = filter_name
+        if rest_frame:
+            z_val = None
+            if redshift_series is not None:
+                z_val = redshift_series.get(str(clean_id))
+            if z_val is None or pd.isna(z_val):
+                missing_files += 1
+                continue
+            selected_filter = select_rest_frame_filter(float(z_val))
+            if selected_filter is None:
+                missing_files += 1
+                continue
+            file_loc = rest_stamp_root / selected_filter / filename_template.format(filter=selected_filter, id=clean_id)
+        else:
+            file_loc = stamp_dir / filename_template.format(filter=filter_name, id=clean_id)
         if not file_loc.exists():
             missing_files += 1
             continue
@@ -249,6 +292,7 @@ def attach_stamps(
             'id_str': str(clean_id),
             'file_loc': str(file_loc),
             'label': class_idx,
+            'filter_used': selected_filter,
             **{col: getattr(record, col) for col in LABEL_COLUMNS}
         })
 
@@ -266,6 +310,64 @@ def maybe_subsample(catalog: pd.DataFrame, max_galaxies: Optional[int], seed: in
         return catalog
     logging.info("Subsampling %d galaxies out of %d total for quick experiment", max_galaxies, len(catalog))
     return catalog.sample(n=max_galaxies, random_state=seed).reset_index(drop=True)
+
+
+def load_redshift_lookup(
+    table_path: Optional[Path],
+    id_column: str,
+    z_column: str
+) -> pd.Series:
+    if table_path is None:
+        logging.info("Loading redshifts via read_catalogues_v7.read_cosmos2025() (this may take a while).")
+        from moprhology import read_catalogues_v7
+        redshift_df = read_catalogues_v7.read_cosmos2025()
+    else:
+        suffix = table_path.suffix.lower()
+        if suffix in {'.csv', '.txt'}:
+            redshift_df = pd.read_csv(table_path)
+        elif suffix in {'.tsv'}:
+            redshift_df = pd.read_csv(table_path, sep='\t')
+        elif suffix in {'.parquet'}:
+            redshift_df = pd.read_parquet(table_path)
+        elif suffix in {'.feather'}:
+            redshift_df = pd.read_feather(table_path)
+        elif suffix in {'.fits', '.fit', '.fz'}:
+            from astropy.io import fits
+            from astropy.table import Table
+
+            id_values = None
+            z_values = None
+            with fits.open(table_path, memmap=True) as hdul:
+                for hdu in hdul[1:]:  # skip primary HDU
+                    if getattr(hdu, 'data', None) is None:
+                        continue
+                    table = Table(hdu.data)
+                    cols = table.colnames
+                    if id_values is None and id_column in cols:
+                        id_values = table[id_column]
+                    if z_values is None and z_column in cols:
+                        z_values = table[z_column]
+                    if id_values is not None and z_values is not None:
+                        break
+            if id_values is None or z_values is None:
+                raise ValueError(
+                    f"Could not find both '{id_column}' and '{z_column}' columns in FITS file {table_path}."
+                )
+            redshift_df = pd.DataFrame({
+                id_column: np.array(id_values),
+                z_column: np.array(z_values)
+            })
+        else:
+            raise ValueError(f"Unsupported redshift table format: {suffix}")
+
+    missing = [col for col in [id_column, z_column] if col not in redshift_df.columns]
+    if missing:
+        raise ValueError(f"Redshift table missing required columns: {missing}")
+
+    lookup = redshift_df[[id_column, z_column]].dropna()
+    lookup[id_column] = lookup[id_column].astype(str)
+    series = lookup.set_index(id_column)[z_column]
+    return series
 
 
 def stratified_splits(
@@ -398,8 +500,32 @@ def require_gpu(accelerator: str) -> None:
 
 
 def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobotClassifier, GalaxyDataModule, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    stamp_dir = args.stamp_dir.expanduser().resolve()
+    rest_frame_mode = args.filter_name.lower() == 'rest-frame'
+    redshift_lookup = None
+    rest_stamp_root = None
+    if rest_frame_mode:
+        rest_stamp_root = stamp_dir
+        redshift_lookup = load_redshift_lookup(
+            args.redshift_table,
+            args.redshift_id_column,
+            args.redshift_value_column
+        )
+        logging.info(
+            "Rest-frame filter selection active: z<1 -> F150W, 1<=z<3 -> F277W, z>=3 -> F444W"
+        )
+
     df_visual = load_visual_catalog(args.visual_labels, args.sqlite_table)
-    catalog = attach_stamps(df_visual, args.stamp_dir, args.filename_template, args.filter_name, args.keep_ambiguous)
+    catalog = attach_stamps(
+        df_visual,
+        stamp_dir,
+        args.filename_template,
+        args.filter_name,
+        args.keep_ambiguous,
+        rest_frame=rest_frame_mode,
+        redshift_lookup=redshift_lookup,
+        rest_stamp_root=rest_stamp_root
+    )
     catalog = maybe_subsample(catalog, args.max_galaxies, args.seed)
 
     train_catalog, val_catalog, test_catalog = stratified_splits(
