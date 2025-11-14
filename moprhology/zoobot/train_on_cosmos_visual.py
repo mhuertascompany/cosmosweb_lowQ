@@ -61,6 +61,8 @@ def set_label_columns(label_set: str) -> None:
     global LABEL_COLUMNS
     if label_set == 'regular':
         LABEL_COLUMNS = REGULAR_CLASS_COLUMNS.copy()
+    elif label_set == 'binary':
+        LABEL_COLUMNS = ['NOT_DISTURBED', 'DISTURBED']
     else:
         LABEL_COLUMNS = ALL_CLASS_COLUMNS.copy()
 
@@ -145,7 +147,7 @@ def parse_args() -> argparse.Namespace:
                         help="Optional CSV to store per-class softmax predictions on the test split.")
     parser.add_argument('--n-predict-samples', type=int, default=1,
                         help="If supported, number of stochastic forward passes for predictions.")
-    parser.add_argument('--label-set', choices=['all', 'regular'], default='regular',
+    parser.add_argument('--label-set', choices=['all', 'regular', 'binary'], default='regular',
                         help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
     parser.add_argument('--redshift-table', type=Path, default=None,
                         help="Optional table with columns for ID and redshift (used when --filter-name rest-frame).")
@@ -277,8 +279,16 @@ def attach_stamps(
         if not file_loc.exists():
             missing_files += 1
             continue
-        labels = np.array([getattr(record, col) for col in LABEL_COLUMNS], dtype=float)
-        labels = np.nan_to_num(labels, nan=0.0)
+        if LABEL_COLUMNS == ['NOT_DISTURBED', 'DISTURBED']:
+            regular_cols = [col for col in ALL_CLASS_COLUMNS if col.endswith('REGULAR')]
+            disturbed_cols = [col for col in ALL_CLASS_COLUMNS if not col.endswith('REGULAR')]
+            labels = np.array([
+                np.any([getattr(record, col) for col in regular_cols]),
+                np.any([getattr(record, col) for col in disturbed_cols])
+            ], dtype=float)
+        else:
+            labels = np.array([getattr(record, col) for col in LABEL_COLUMNS], dtype=float)
+            labels = np.nan_to_num(labels, nan=0.0)
         if labels.sum() == 0:
             unlabeled += 1
             continue
@@ -288,12 +298,13 @@ def attach_stamps(
             ambiguous += 1
             continue
         class_idx = int(positives[0] if len(positives) else np.argmax(labels))
+        extra_cols = {} if LABEL_COLUMNS == ['NOT_DISTURBED', 'DISTURBED'] else {col: getattr(record, col) for col in LABEL_COLUMNS}
         rows.append({
             'id_str': str(clean_id),
             'file_loc': str(file_loc),
             'label': class_idx,
             'filter_used': selected_filter,
-            **{col: getattr(record, col) for col in LABEL_COLUMNS}
+            **extra_cols
         })
 
     logging.info(
