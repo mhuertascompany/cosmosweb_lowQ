@@ -73,6 +73,12 @@ def label_name_mappings() -> tuple[dict[str, int], dict[int, str]]:
     return class_to_id, id_to_class
 
 
+def get_source_label_columns() -> List[str]:
+    if LABEL_COLUMNS == ['NOT_DISTURBED', 'DISTURBED']:
+        return ALL_CLASS_COLUMNS.copy()
+    return LABEL_COLUMNS.copy()
+
+
 def select_rest_frame_filter(z_value: float) -> Optional[str]:
     if pd.isna(z_value):
         return None
@@ -166,6 +172,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_visual_catalog(path: Optional[Path], table: str) -> pd.DataFrame:
     """Load the visual morphology table."""
+    source_cols = get_source_label_columns()
     if path is None:
         logging.info("Loading visual morphology table via moprhology.read_catalogues_v7.read_visual_morpho()")
         try:
@@ -187,15 +194,16 @@ def load_visual_catalog(path: Optional[Path], table: str) -> pd.DataFrame:
         elif suffix in {'.feather'}:
             df_visual = pd.read_feather(path)
         elif suffix in {'.db', '.sqlite'}:
-            query = f"SELECT id, {', '.join(LABEL_COLUMNS)} FROM {table}"
+            query = f"SELECT id, {', '.join(source_cols)} FROM {table}"
             with sqlite3.connect(path) as conn:
                 df_visual = pd.read_sql_query(query, conn)
         else:
             raise ValueError(f"Unsupported label file type: {suffix}")
-    missing = [col for col in ['id', *LABEL_COLUMNS] if col not in df_visual.columns]
+    missing = [col for col in ['id', *source_cols] if col not in df_visual.columns]
     if missing:
         raise ValueError(f"Missing required columns in visual table: {missing}")
-    return df_visual[['id', *LABEL_COLUMNS]].copy()
+    return df_visual[['id', *source_cols]].copy()
+
 
 
 def attach_stamps(
