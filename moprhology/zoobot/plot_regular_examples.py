@@ -92,6 +92,11 @@ def parse_args() -> argparse.Namespace:
         help="CSV/TSV/Parquet table containing 'id_str' and 'zfinal' columns (only needed for rest-frame mode).",
     )
     parser.add_argument(
+        "--redshift-id-column",
+        default="id",
+        help="Column containing object IDs in the redshift table (rest-frame mode).",
+    )
+    parser.add_argument(
         "--redshift-value-column",
         default="zfinal",
         help="Column containing redshift values when --rest-frame is enabled.",
@@ -150,11 +155,12 @@ def main():
         if "filter_used" not in catalog.columns and args.redshift_table is None:
             raise ValueError("Rest-frame mode requires 'filter_used' in catalog or --redshift-table with redshifts.")
         if "filter_used" not in catalog.columns:
-            ztable = pd.read_csv(args.redshift_table)
-            if "id_str" not in ztable.columns or args.redshift_value_column not in ztable.columns:
-                raise ValueError("Redshift table must contain 'id_str' and the specified z column.")
-            zlookup = ztable.set_index('id_str')[args.redshift_value_column]
-            catalog['zfinal'] = catalog['id_str'].map(zlookup)
+            zlookup = cosmos.load_redshift_lookup(
+                args.redshift_table,
+                args.redshift_id_column,
+                args.redshift_value_column
+            )
+            catalog['zfinal'] = catalog['id_str'].astype(str).map(zlookup)
 
     rng = random.Random(args.seed)
 
