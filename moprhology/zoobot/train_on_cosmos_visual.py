@@ -353,9 +353,15 @@ def load_redshift_lookup(
                 raise ValueError(
                     f"Could not find both '{id_column}' and '{z_column}' columns in FITS file {table_path}."
                 )
+            def to_native(arr):
+                arr = np.asarray(arr)
+                if arr.dtype.byteorder == '>' or (arr.dtype.byteorder == '=' and np.little_endian is False):
+                    arr = arr.byteswap().newbyteorder()
+                return arr
+
             redshift_df = pd.DataFrame({
-                id_column: np.array(id_values),
-                z_column: np.array(z_values)
+                id_column: to_native(id_values),
+                z_column: to_native(z_values)
             })
         else:
             raise ValueError(f"Unsupported redshift table format: {suffix}")
