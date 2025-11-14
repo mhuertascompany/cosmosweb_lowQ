@@ -103,70 +103,74 @@ class To3d:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Finetune Zoobot on COSMOS visual labels.")
     parser.add_argument('--stamp-dir', required=True, type=Path,
-                        help="Directory containing COSMOS cutouts (jpg).")
+        help="Directory containing COSMOS cutouts (jpg).")
     parser.add_argument('--filter-name', default='F150W',
-                        help="Filter prefix used in the stamp filenames (default: %(default)s).")
+        help="Filter prefix used in the stamp filenames (default: %(default)s).")
     parser.add_argument('--filename-template', default='{filter}_{id}.jpg',
-                        help="Template used to locate each stamp. "
-                             "Formatted with keys 'filter' and 'id'.")
+        help="Template used to locate each stamp. "
+             "Formatted with keys 'filter' and 'id'.")
     parser.add_argument('--visual-labels', type=Path, default=None,
-                        help="Optional CSV/Parquet/SQLite file with the visual morphology table. "
-                             "If omitted, the script attempts to import moprhology.read_catalogues_v7.")
+        help="Optional CSV/Parquet/SQLite file with the visual morphology table. "
+             "If omitted, the script attempts to import moprhology.read_catalogues_v7.")
     parser.add_argument('--sqlite-table', default='morphology',
-                        help="Table name inside the SQLite DB (when --visual-labels points to .db/.sqlite).")
+        help="Table name inside the SQLite DB (when --visual-labels points to .db/.sqlite).")
     parser.add_argument('--max-galaxies', type=int, default=None,
-                        help="Optional cap on the number of galaxies for quick experiments.")
+        help="Optional cap on the number of galaxies for quick experiments.")
     parser.add_argument('--test-fraction', type=float, default=0.2,
-                        help="Fraction of galaxies reserved for the held-out test split.")
+        help="Fraction of galaxies reserved for the held-out test split.")
     parser.add_argument('--val-fraction', type=float, default=0.1,
-                        help="Fraction of galaxies reserved for validation.")
+        help="Fraction of galaxies reserved for validation.")
     parser.add_argument('--seed', type=int, default=42, help="Random seed for all splits.")
     parser.add_argument('--batch-size', type=int, default=64, help="Training batch size.")
     parser.add_argument('--num-workers', type=int, default=8, help="DataLoader worker count.")
     parser.add_argument('--image-size', type=int, default=224,
-                        help="Side length (pixels) after cropping/resizing.")
+        help="Side length (pixels) after cropping/resizing.")
     parser.add_argument('--crop-scale', type=float, nargs=2, default=(0.7, 0.8),
-                        help="Scale bounds for RandomResizedCrop.")
+        help="Scale bounds for RandomResizedCrop.")
     parser.add_argument('--crop-ratio', type=float, nargs=2, default=(0.9, 1.1),
-                        help="Aspect ratio bounds for RandomResizedCrop.")
+        help="Aspect ratio bounds for RandomResizedCrop.")
     parser.add_argument('--learning-rate', type=float, default=5e-4, help="AdamW learning rate.")
     parser.add_argument('--weight-decay', type=float, default=0.05, help="AdamW weight decay.")
     parser.add_argument('--layer-decay', type=float, default=0.75,
-                        help="Layer-wise LR decay applied inside Zoobot.")
+        help="Layer-wise LR decay applied inside Zoobot.")
     parser.add_argument('--head-dropout', type=float, default=0.5,
-                        help="Dropout probability inside the classification head.")
+        help="Dropout probability inside the classification head.")
     parser.add_argument('--training-mode', choices=['full', 'head_only'], default='full',
-                        help="Whether to finetune the full encoder or only the linear head.")
+        help="Whether to finetune the full encoder or only the linear head.")
     parser.add_argument('--encoder-name', default='hf_hub:mwalmsley/zoobot-encoder-euclid',
-                        help="Zoobot Hugging Face encoder checkpoint to start from.")
+        help="Zoobot Hugging Face encoder checkpoint to start from.")
     parser.add_argument('--max-epochs', type=int, default=50, help="Maximum finetuning epochs.")
     parser.add_argument('--patience', type=int, default=8,
-                        help="Early stopping patience (epochs).")
+        help="Early stopping patience (epochs).")
     parser.add_argument('--accelerator', default='auto',
-                        help="PyTorch Lightning accelerator argument (e.g. 'gpu', 'cpu').")
+        help="PyTorch Lightning accelerator argument (e.g. 'gpu', 'cpu').")
     parser.add_argument('--devices', default='auto',
-                        help="Devices argument passed to Lightning (e.g. 1, [0,1], 'auto').")
+        help="Devices argument passed to Lightning (e.g. 1, [0,1], 'auto').")
     parser.add_argument('--precision', default='32', help="Precision argument for Lightning Trainer.")
     parser.add_argument('--save-dir', type=Path, default=Path('./zoobot_cosmos_visual'),
-                        help="Directory where checkpoints and logs will be written.")
+        help="Directory where checkpoints and logs will be written.")
     parser.add_argument('--prediction-csv', type=Path, default=None,
-                        help="Optional CSV to store per-class softmax predictions on the test split.")
+        help="Optional CSV to store per-class softmax predictions on the test split.")
     parser.add_argument('--n-predict-samples', type=int, default=1,
-                        help="If supported, number of stochastic forward passes for predictions.")
+        help="If supported, number of stochastic forward passes for predictions.")
     parser.add_argument('--label-set', choices=['all', 'regular', 'binary'], default='regular',
-                        help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
+        help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
     parser.add_argument('--redshift-table', type=Path, default=None,
-                        help="Optional table with columns for ID and redshift (used when --filter-name rest-frame).")
+        help="Optional table with columns for ID and redshift (used when --filter-name rest-frame).")
     parser.add_argument('--redshift-id-column', default='id', help="Column containing object IDs in the redshift table.")
     parser.add_argument('--redshift-value-column', default='zfinal', help="Column containing redshift values.")
     parser.add_argument('--export-splits-dir', type=Path, default=None,
-                        help="If set, save train/val/test catalog CSVs (with labels) to this directory.")
+        help="If set, save train/val/test catalog CSVs (with labels) to this directory.")
     parser.add_argument('--use-class-weights', action='store_true',
-                        help="Enable balanced class weights inside the cross-entropy loss.")
+        help="Enable balanced class weights inside the cross-entropy loss.")
     parser.add_argument('--keep-ambiguous', action='store_true',
-                        help="Keep galaxies with multiple positive labels (defaults to dropping them).")
+        help="Keep galaxies with multiple positive labels (defaults to dropping them).")
     parser.add_argument('--disable-progbar', action='store_true',
-                        help="Hide Lightning progress bars.")
+        help="Hide Lightning progress bars.")
+    parser.add_argument('--max-majority', type=int, default=None,
+        help="Optional cap on the number of NOT_DISTURBED galaxies when --label-set binary.")
+    parser.add_argument('--majority-ratio', type=float, default=None,
+        help="Alternative to --max-majority: keep at most this factor times the minority size.")
     return parser.parse_args()
 
 
@@ -244,14 +248,8 @@ def attach_stamps(
             stamp_dir / filename_template.format(filter=filter_name, id=pid)
             for pid in preview
         ]
-        logging.info(
-            "First visual IDs: %s",
-            ", ".join(str(pid) for pid in preview)
-        )
-        logging.info(
-            "Corresponding expected stamp files: %s",
-            ", ".join(str(path) for path in preview_paths)
-        )
+        logging.info("First visual IDs: %s", ", ".join(str(pid) for pid in preview))
+        logging.info("Corresponding expected stamp files: %s", ", ".join(str(path) for path in preview_paths))
 
     rows = []
     missing_files = 0
@@ -271,9 +269,7 @@ def attach_stamps(
         clean_id = sanitize_id(record.id)
         selected_filter = filter_name
         if rest_frame:
-            z_val = None
-            if redshift_series is not None:
-                z_val = redshift_series.get(str(clean_id))
+            z_val = redshift_series.get(str(clean_id)) if redshift_series is not None else None
             if z_val is None or pd.isna(z_val):
                 missing_files += 1
                 continue
@@ -306,7 +302,9 @@ def attach_stamps(
             ambiguous += 1
             continue
         class_idx = int(positives[0] if len(positives) else np.argmax(labels))
-        extra_cols = {} if LABEL_COLUMNS == ['NOT_DISTURBED', 'DISTURBED'] else {col: getattr(record, col) for col in LABEL_COLUMNS}
+        extra_cols = {}
+        if LABEL_COLUMNS != ['NOT_DISTURBED', 'DISTURBED']:
+            extra_cols = {col: getattr(record, col) for col in LABEL_COLUMNS}
         rows.append({
             'id_str': str(clean_id),
             'file_loc': str(file_loc),
@@ -372,6 +370,7 @@ def load_redshift_lookup(
                 raise ValueError(
                     f"Could not find both '{id_column}' and '{z_column}' columns in FITS file {table_path}."
                 )
+
             def to_native(arr):
                 arr = np.asarray(arr)
                 dtype = arr.dtype
@@ -431,11 +430,11 @@ def build_train_transforms(image_size: int, crop_scale: Iterable[float], crop_ra
         A.Lambda(image=To3d(), p=1.0),
         A.Rotate(limit=180, interpolation=1, border_mode=0, value=0, always_apply=True),
         A.RandomResizedCrop(
-            size=(image_size, image_size),
-            scale=tuple(crop_scale),
-            ratio=tuple(crop_ratio),
-            interpolation=1,
-            always_apply=True
+    size=(image_size, image_size),
+    scale=tuple(crop_scale),
+    ratio=tuple(crop_ratio),
+    interpolation=1,
+    always_apply=True
         ),
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
@@ -503,8 +502,8 @@ def create_datamodule(
         return GalaxyDataModule(**kwargs)
     except TypeError:
         logging.warning(
-            "Installed galaxy-datasets version does not accept custom_albumentation_transform; "
-            "falling back to torchvision transforms."
+    "Installed galaxy-datasets version does not accept custom_albumentation_transform; "
+    "falling back to torchvision transforms."
         )
         kwargs.pop('custom_albumentation_transform', None)
         kwargs['train_transform'] = build_torchvision_train_transform(image_size, crop_scale, crop_ratio)
@@ -543,6 +542,7 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         )
 
     df_visual = load_visual_catalog(args.visual_labels, args.sqlite_table)
+
     catalog = attach_stamps(
         df_visual,
         stamp_dir,
@@ -554,6 +554,23 @@ def finetune_model(args: argparse.Namespace) -> tuple[finetune.FinetuneableZoobo
         rest_stamp_root=rest_stamp_root
     )
     catalog = maybe_subsample(catalog, args.max_galaxies, args.seed)
+
+    if args.label_set == 'binary' and (args.max_majority or args.majority_ratio):
+        minority = catalog[catalog['label'] == 1]
+        majority = catalog[catalog['label'] == 0]
+        target = None
+        if args.max_majority is not None:
+            target = args.max_majority
+        elif args.majority_ratio is not None and len(minority) > 0:
+            target = int(np.ceil(len(minority) * args.majority_ratio))
+        if target is not None and len(majority) > target and len(minority) > 0:
+            logging.info(
+                "Undersampling majority class from %d to %d to mitigate imbalance",
+                len(majority),
+                target
+            )
+            majority = majority.sample(n=target, random_state=args.seed)
+            catalog = pd.concat([majority, minority]).sample(frac=1, random_state=args.seed).reset_index(drop=True)
 
     train_catalog, val_catalog, test_catalog = stratified_splits(
         catalog,
