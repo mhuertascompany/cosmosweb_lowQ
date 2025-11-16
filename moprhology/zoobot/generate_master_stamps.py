@@ -83,6 +83,9 @@ def main():
 
     ensure_dirs(args.output_root, args.filters)
     table = Table.read(args.catalog, format="fits")
+    # drop multidimensional columns before converting
+    flat_cols = [col for col in table.colnames if len(table[col].shape) <= 1]
+    table = table[flat_cols]
     df = table.to_pandas()
     if args.mag_column not in df.columns:
         raise ValueError(f"Column {args.mag_column} missing from catalog.")
