@@ -31,6 +31,12 @@ import numpy as np
 from astropy.table import Table
 from skimage.transform import resize
 
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from moprhology.zoobot.make_stamps import (
     load_imgs,
     image_make_cutout,
@@ -132,4 +138,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
