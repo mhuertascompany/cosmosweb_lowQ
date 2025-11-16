@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --nodelist=n03
 #SBATCH --cpus-per-task=4
-#SBATCH --time=02:00:00
+#SBATCH --time=10:00:00
 #SBATCH --gres=gpu:1
 
 
@@ -20,4 +20,6 @@ cd /n03data/huertas/python/cosmosweb_lowQ
 #python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/rebuild_visual_stamps.py --visual-db /n07data/ilbert/COSMOS-Web/photoz_MASTER_v3.1.0/MORPHO/visualmorpho_COSMOSWeb_v7.db --table morphology --coord-column INFO --filters F115W F150W F277W F444W --output-root /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert --arcsec-size 2.5 --resize-px 424
 
 
-python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/plot_confusion_examples.py --catalog /n03data/huertas/COSMOS-Web/ilbert_finetune/binary/test_catalog.csv --confusion-file /n03data/huertas/python/cosmosweb_lowQ/notebooks/confusion_samples_binary.csv --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert --filename-template "{filter}_{id}.jpg" --output /n03data/huertas/COSMOS-Web/ilbert_finetune/binary/confusion_gallery.pdf --samples-per-cell 6 
+#python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/plot_confusion_examples.py --catalog /n03data/huertas/COSMOS-Web/ilbert_finetune/binary/test_catalog.csv --confusion-file /n03data/huertas/python/cosmosweb_lowQ/notebooks/confusion_samples_binary.csv --stamp-dir /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert --filename-template "{filter}_{id}.jpg" --output /n03data/huertas/COSMOS-Web/ilbert_finetune/binary/confusion_gallery.pdf --samples-per-cell 6 
+
+python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/generate_master_stamps.py --catalog /n07data/ilbert/COSMOS-Web/photoz_MASTER_v3.1.0/MORPHO/COSMOSWeb_mastercatalog_v1.fits --filters F150W F277W F444W --mag-column mag_model_f277w --mag-limit 25 --output-root /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert --arcsec-size 2.5 
