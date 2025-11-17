@@ -316,7 +316,7 @@ def attach_stamps(
             continue
         class_idx = int(positives[0] if len(positives) else np.argmax(labels))
         extra_cols = {}
-        if LABEL_COLUMNS != ['NOT_DISTURBED', 'DISTURBED']:
+        if LABEL_COLUMNS not in (['NOT_DISTURBED', 'DISTURBED'], ['ELLIPTICAL', 'S0', 'EARLY_DISK', 'LATE_DISK']):
             extra_cols = {col: getattr(record, col) for col in LABEL_COLUMNS}
         rows.append({
             'id_str': str(clean_id),
