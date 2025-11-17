@@ -63,6 +63,8 @@ def set_label_columns(label_set: str) -> None:
         LABEL_COLUMNS = REGULAR_CLASS_COLUMNS.copy()
     elif label_set == 'binary':
         LABEL_COLUMNS = ['NOT_DISTURBED', 'DISTURBED']
+    elif label_set == 'family':
+        LABEL_COLUMNS = ['ELLIPTICAL', 'S0', 'EARLY_DISK', 'LATE_DISK']
     else:
         LABEL_COLUMNS = ALL_CLASS_COLUMNS.copy()
 
@@ -74,7 +76,7 @@ def label_name_mappings() -> tuple[dict[str, int], dict[int, str]]:
 
 
 def get_source_label_columns() -> List[str]:
-    if LABEL_COLUMNS == ['NOT_DISTURBED', 'DISTURBED']:
+    if LABEL_COLUMNS in (['NOT_DISTURBED', 'DISTURBED'], ['ELLIPTICAL', 'S0', 'EARLY_DISK', 'LATE_DISK']):
         return ALL_CLASS_COLUMNS.copy()
     return LABEL_COLUMNS.copy()
 
@@ -153,7 +155,7 @@ def parse_args() -> argparse.Namespace:
         help="Optional CSV to store per-class softmax predictions on the test split.")
     parser.add_argument('--n-predict-samples', type=int, default=1,
         help="If supported, number of stochastic forward passes for predictions.")
-    parser.add_argument('--label-set', choices=['all', 'regular', 'binary'], default='regular',
+    parser.add_argument('--label-set', choices=['all', 'regular', 'binary', 'family'], default='regular',
         help="Subset of morphology columns to train on. 'regular' keeps only *_REGULAR classes.")
     parser.add_argument('--redshift-table', type=Path, default=None,
         help="Optional table with columns for ID and redshift (used when --filter-name rest-frame).")
@@ -289,6 +291,17 @@ def attach_stamps(
             labels = np.array([
                 np.any([getattr(record, col) for col in regular_cols]),
                 np.any([getattr(record, col) for col in disturbed_cols])
+            ], dtype=float)
+        elif LABEL_COLUMNS == ['ELLIPTICAL', 'S0', 'EARLY_DISK', 'LATE_DISK']:
+            groups = {
+                'ELLIPTICAL': [col for col in ALL_CLASS_COLUMNS if col.startswith('ELL_')],
+                'S0': [col for col in ALL_CLASS_COLUMNS if col.startswith('S0_')],
+                'EARLY_DISK': [col for col in ALL_CLASS_COLUMNS if col.startswith('EDISK_')],
+                'LATE_DISK': [col for col in ALL_CLASS_COLUMNS if col.startswith('LDISK_')],
+            }
+            labels = np.array([
+                np.any([getattr(record, col) for col in cols])
+                for cols in groups.values()
             ], dtype=float)
         else:
             labels = np.array([getattr(record, col) for col in LABEL_COLUMNS], dtype=float)
