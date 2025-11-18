@@ -146,8 +146,12 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
 
 
 def get_inference_transform(image_size: int):
-    logging.warning("Using identity transform; ensure dataset already returns tensors.")
-    return None
+    import torchvision.transforms as T
+    return T.Compose([
+        T.Grayscale(3),
+        T.Resize((image_size, image_size)),
+        T.ConvertImageDtype(torch.float32)
+    ])
 
 
 def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
