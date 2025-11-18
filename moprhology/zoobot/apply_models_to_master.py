@@ -135,7 +135,7 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
             missing += 1
             continue
         rows.append({
-            'id_str': str(obj_id),
+            'id': str(obj_id),
             'file_loc': str(file_path),
             'filter_used': filter_name,
             args.redshift_column: z
@@ -202,7 +202,7 @@ def main():
         logging.info("Running %s model (%d classes)", label_set, len(label_names))
         preds = run_model(ckpt, label_names, inference_catalog[['id', 'file_loc']], args)
         preds = preds.rename(columns={name: f"{label_set}_{name}" for name in label_names})
-        outputs.update({col: preds[col].values for col in preds.columns if col != 'id_str'})
+        outputs.update({col: preds[col].values for col in preds.columns if col not in {'id'}})
 
     final_df = pd.DataFrame(outputs)
     final_df['id'] = final_df['id'].astype(str)
