@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import albumentations as A
+import torchvision.transforms as T
 import numpy as np
 import pandas as pd
 from astropy.io import fits
@@ -144,10 +145,13 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
     return pd.DataFrame(rows)
 
 
-def get_inference_transform(image_size: int) -> A.Compose:
-    return A.Compose([
-        A.Lambda(image=To3d(), p=1.0),
-        A.Resize(height=image_size, width=image_size)
+import torchvision.transforms as T
+
+def get_inference_transform(image_size: int):
+    return T.Compose([
+        T.Grayscale(num_output_channels=3),
+        T.Resize((image_size, image_size)),
+        T.ToTensor()
     ])
 
 
