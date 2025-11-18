@@ -98,7 +98,7 @@ def load_master_subset(catalog_path: Path, id_col: str, z_col: str, extra_cols: 
             if arr.dtype.kind == "S":  # bytes -> str
                 return arr.astype(str)
             if arr.dtype.byteorder == ">" or (arr.dtype.byteorder == "=" and np.little_endian is False):
-                arr = arr.byteswap().newbyteorder()
+                arr = arr.byteswap().view(arr.dtype.newbyteorder('<'))
             return arr
         raise ValueError(f"Column {column} not found in FITS file {catalog_path}")
 
