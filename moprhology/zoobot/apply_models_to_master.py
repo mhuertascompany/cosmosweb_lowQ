@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import albumentations as A
-import torchvision.transforms as T
 import numpy as np
 import pandas as pd
 from astropy.io import fits
@@ -145,14 +144,10 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
     return pd.DataFrame(rows)
 
 
-import torchvision.transforms as T
 
 def get_inference_transform(image_size: int):
-    return T.Compose([
-        T.Grayscale(num_output_channels=3),
-        T.Resize((image_size, image_size)),
-        T.ToTensor()
-    ])
+    logging.warning("Using identity transform; ensure dataset already returns tensors.")
+    return None
 
 
 def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
@@ -161,16 +156,19 @@ def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, a
     transform = get_inference_transform(args.image_size)
 
     catalog = catalog.rename(columns={'id': 'id_str'})
+    kwargs = {
+        'batch_size': args.batch_size,
+        'num_workers': args.num_workers
+    }
+    if transform is not None:
+        kwargs['test_transform'] = transform
     preds = predict_on_catalog.predict(
         catalog,
         model,
         label_cols=label_names,
-        inference_transform=transform,
+        inference_transform=None,
         save_loc=None,
-        datamodule_kwargs={
-            'batch_size': args.batch_size,
-            'num_workers': args.num_workers
-        },
+        datamodule_kwargs=kwargs,
         trainer_kwargs={
             'accelerator': args.accelerator,
             'devices': args.devices,
