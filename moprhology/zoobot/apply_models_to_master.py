@@ -165,8 +165,7 @@ def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, a
         save_loc=None,
         datamodule_kwargs={
             'batch_size': args.batch_size,
-            'num_workers': args.num_workers,
-            'custom_albumentation_transform': transform
+            'num_workers': args.num_workers
         },
         trainer_kwargs={
             'accelerator': args.accelerator,
