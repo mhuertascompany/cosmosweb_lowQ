@@ -27,7 +27,6 @@ from typing import Dict, List, Optional
 import albumentations as A
 import numpy as np
 import pandas as pd
-from astropy.table import Table
 from astropy.io import fits
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -89,51 +88,34 @@ def parse_args() -> argparse.Namespace:
 
 def load_master_subset(catalog_path: Path, id_col: str, z_col: str, extra_cols: Optional[List[str]] = None) -> pd.DataFrame:
     logging.info("Reading master catalog from %s", catalog_path)
-    table = Table.read(catalog_path, format="fits")
-    flat_cols = [col for col in table.colnames if len(table[col].shape) <= 1]
-    table = table[flat_cols]
-    df = table.to_pandas()
-    needed = [c for c in [id_col, z_col] + (extra_cols or []) if c]
-    if all(col in df.columns for col in needed):
-        return df[[c for c in needed if c]].copy()
 
-    # if columns were not found in the primary HDU, search other extensions
-    logging.warning("Columns %s or %s not found in first HDU; scanning all extensions.", id_col, z_col)
-    from astropy.io import fits
-    with fits.open(catalog_path, memmap=True) as hdus:
-        id_values = None
-        z_values = None
+    def fetch_column(hdus, column: str) -> np.ndarray:
         for hdu in hdus[1:]:
-            if getattr(hdu, "data", None) is None:
+            data = getattr(hdu, "data", None)
+            if data is None or column not in data.names:
                 continue
-            table = Table(hdu.data)
-            cols = table.colnames
-            if id_values is None and id_col in cols:
-                id_values = table[id_col]
-            if z_values is None and z_col in cols:
-                z_values = table[z_col]
-            if id_values is not None and z_values is not None:
-                break
-    if id_values is None or z_values is None:
-        raise ValueError(f"Could not find {id_col} and {z_col} anywhere in {catalog_path}")
+            arr = np.asarray(data[column])
+            if arr.dtype.kind == "S":  # bytes -> str
+                return arr.astype(str)
+            if arr.dtype.byteorder == ">" or (arr.dtype.byteorder == "=" and np.little_endian is False):
+                arr = arr.byteswap().newbyteorder()
+            return arr
+        raise ValueError(f"Column {column} not found in FITS file {catalog_path}")
 
-    def to_native(arr):
-        arr = np.asarray(arr)
-        dtype = arr.dtype
-        if dtype.byteorder == ">" or (dtype.byteorder == "=" and np.little_endian is False):
-            dtype = dtype.newbyteorder("<")
-            arr = arr.byteswap().view(dtype)
-        return arr
+    with fits.open(catalog_path, memmap=True) as hdus:
+        data = {
+            id_col: fetch_column(hdus, id_col),
+            z_col: fetch_column(hdus, z_col)
+        }
+        if extra_cols:
+            for col in extra_cols:
+                try:
+                    data[col] = fetch_column(hdus, col)
+                except ValueError:
+                    logging.warning("Column %s not found; filling NaNs.", col)
+                    data[col] = np.full_like(data[id_col], np.nan, dtype=float)
 
-    data = {
-        id_col: to_native(id_values),
-        z_col: to_native(z_values)
-    }
-    if extra_cols:
-        for col in extra_cols:
-            data[col] = np.nan
-    df = pd.DataFrame(data)
-    return df
+    return pd.DataFrame(data)
 
 
 def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
@@ -198,16 +180,16 @@ def main():
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    extra_cols = [args.mag_column] if args.mag_column else []
+    extra_cols = [args.mag_column] if (args.mag_column and args.mag_limit is not None) else []
     df_master = load_master_subset(args.catalog, args.id_column, args.redshift_column, extra_cols)
     if args.mag_column and args.mag_column in df_master.columns and args.mag_limit is not None:
-        before = len(df_master)
-        df_master = df_master[df_master[args.mag_column].notna() & (df_master[args.mag_column] <= args.mag_limit)]
-        logging.info("Magnitude cut %s <= %.2f reduced catalog from %d to %d objects.",
-                     args.mag_column, args.mag_limit, before, len(df_master))
+         before = len(df_master)
+         df_master = df_master[df_master[args.mag_column].notna() & (df_master[args.mag_column] <= args.mag_limit)]
+         logging.info("Magnitude cut %s <= %.2f reduced catalog from %d to %d objects.",
+                      args.mag_column, args.mag_limit, before, len(df_master))
     inference_catalog = build_inference_catalog(df_master, args)
 
-    outputs = {'id': inference_catalog['id_str'].astype(str)}
+    outputs = {'id': inference_catalog['id'].astype(str)}
 
     model_configs = [
         ('regular', args.ckpt_regular),
@@ -218,7 +200,7 @@ def main():
     for label_set, ckpt in model_configs:
         label_names = LABEL_SETS[label_set]
         logging.info("Running %s model (%d classes)", label_set, len(label_names))
-        preds = run_model(ckpt, label_names, inference_catalog[['id_str', 'file_loc']], args)
+        preds = run_model(ckpt, label_names, inference_catalog[['id', 'file_loc']], args)
         preds = preds.rename(columns={name: f"{label_set}_{name}" for name in label_names})
         outputs.update({col: preds[col].values for col in preds.columns if col != 'id_str'})
 
