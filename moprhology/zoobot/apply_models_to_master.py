@@ -156,6 +156,7 @@ def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, a
     model = finetune.FinetuneableZoobotClassifier.load_from_checkpoint(str(model_path), strict=False)
     transform = get_inference_transform(args.image_size)
 
+    catalog = catalog.rename(columns={'id': 'id_str'})
     preds = predict_on_catalog.predict(
         catalog,
         model,
