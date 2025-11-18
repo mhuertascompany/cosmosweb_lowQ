@@ -68,6 +68,10 @@ def parse_args() -> argparse.Namespace:
                         help="Filters available in stamp-root.")
     parser.add_argument("--filename-template", default="{filter}_{id}.jpg",
                         help="How stamps are named inside each filter folder.")
+    parser.add_argument("--mag-column", default="mag_model_f277w",
+                        help="Optional column for magnitude filtering (case-sensitive).")
+    parser.add_argument("--mag-limit", type=float, default=25.0,
+                        help="Keep objects with mag_column <= mag_limit (set None to skip).")
     parser.add_argument("--ckpt-regular", type=Path, required=True, help="Checkpoint for the regular model.")
     parser.add_argument("--ckpt-family", type=Path, required=True, help="Checkpoint for the family model.")
     parser.add_argument("--ckpt-binary", type=Path, required=True, help="Checkpoint for the binary model.")
@@ -83,14 +87,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_master_subset(catalog_path: Path, id_col: str, z_col: str) -> pd.DataFrame:
+def load_master_subset(catalog_path: Path, id_col: str, z_col: str, extra_cols: Optional[List[str]] = None) -> pd.DataFrame:
     logging.info("Reading master catalog from %s", catalog_path)
     table = Table.read(catalog_path, format="fits")
     flat_cols = [col for col in table.colnames if len(table[col].shape) <= 1]
     table = table[flat_cols]
     df = table.to_pandas()
-    if id_col in df.columns and z_col in df.columns:
-        return df[[id_col, z_col]].copy()
+    needed = [c for c in [id_col, z_col] + (extra_cols or []) if c]
+    if all(col in df.columns for col in needed):
+        return df[[c for c in needed if c]].copy()
 
     # if columns were not found in the primary HDU, search other extensions
     logging.warning("Columns %s or %s not found in first HDU; scanning all extensions.", id_col, z_col)
@@ -120,10 +125,14 @@ def load_master_subset(catalog_path: Path, id_col: str, z_col: str) -> pd.DataFr
             arr = arr.byteswap().view(dtype)
         return arr
 
-    df = pd.DataFrame({
+    data = {
         id_col: to_native(id_values),
         z_col: to_native(z_values)
-    })
+    }
+    if extra_cols:
+        for col in extra_cols:
+            data[col] = np.nan
+    df = pd.DataFrame(data)
     return df
 
 
@@ -189,7 +198,13 @@ def main():
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
-    df_master = load_master_subset(args.catalog, args.id_column, args.redshift_column)
+    extra_cols = [args.mag_column] if args.mag_column else []
+    df_master = load_master_subset(args.catalog, args.id_column, args.redshift_column, extra_cols)
+    if args.mag_column and args.mag_column in df_master.columns and args.mag_limit is not None:
+        before = len(df_master)
+        df_master = df_master[df_master[args.mag_column].notna() & (df_master[args.mag_column] <= args.mag_limit)]
+        logging.info("Magnitude cut %s <= %.2f reduced catalog from %d to %d objects.",
+                     args.mag_column, args.mag_limit, before, len(df_master))
     inference_catalog = build_inference_catalog(df_master, args)
 
     outputs = {'id': inference_catalog['id_str'].astype(str)}
