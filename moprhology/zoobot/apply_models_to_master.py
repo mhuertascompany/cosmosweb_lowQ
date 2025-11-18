@@ -142,10 +142,7 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
         file_path = stamp_root / filter_name / args.filename_template.format(filter=filter_name, id=obj_id)
         if not file_path.exists():
             missing += 1
-            if args.ignore_missing:
-                continue
-            else:
-                raise FileNotFoundError(f"Missing stamp {file_path}")
+            continue
         rows.append({
             'id_str': str(obj_id),
             'file_loc': str(file_path),
