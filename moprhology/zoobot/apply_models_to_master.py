@@ -89,9 +89,41 @@ def load_master_subset(catalog_path: Path, id_col: str, z_col: str) -> pd.DataFr
     flat_cols = [col for col in table.colnames if len(table[col].shape) <= 1]
     table = table[flat_cols]
     df = table.to_pandas()
-    if id_col not in df.columns or z_col not in df.columns:
-        raise ValueError(f"Catalog missing required columns {id_col} or {z_col}")
-    df = df[[id_col, z_col]].copy()
+    if id_col in df.columns and z_col in df.columns:
+        return df[[id_col, z_col]].copy()
+
+    # if columns were not found in the primary HDU, search other extensions
+    logging.warning("Columns %s or %s not found in first HDU; scanning all extensions.", id_col, z_col)
+    from astropy.io import fits
+    with fits.open(catalog_path, memmap=True) as hdus:
+        id_values = None
+        z_values = None
+        for hdu in hdus[1:]:
+            if getattr(hdu, "data", None) is None:
+                continue
+            table = Table(hdu.data)
+            cols = table.colnames
+            if id_values is None and id_col in cols:
+                id_values = table[id_col]
+            if z_values is None and z_col in cols:
+                z_values = table[z_col]
+            if id_values is not None and z_values is not None:
+                break
+    if id_values is None or z_values is None:
+        raise ValueError(f"Could not find {id_col} and {z_col} anywhere in {catalog_path}")
+
+    def to_native(arr):
+        arr = np.asarray(arr)
+        dtype = arr.dtype
+        if dtype.byteorder == ">" or (dtype.byteorder == "=" and np.little_endian is False):
+            dtype = dtype.newbyteorder("<")
+            arr = arr.byteswap().view(dtype)
+        return arr
+
+    df = pd.DataFrame({
+        id_col: to_native(id_values),
+        z_col: to_native(z_values)
+    })
     return df
 
 
@@ -188,4 +220,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
