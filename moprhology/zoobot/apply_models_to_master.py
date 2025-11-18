@@ -146,7 +146,7 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
 
 def get_inference_transform(image_size: int) -> A.Compose:
     return A.Compose([
-        A.Lambda(image=To3d(), always_apply=True),
+        A.Lambda(image=To3d(), p=1.0),
         A.Resize(height=image_size, width=image_size)
     ])
 
