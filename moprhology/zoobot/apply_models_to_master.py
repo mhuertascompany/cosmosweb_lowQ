@@ -147,11 +147,11 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
 
 
 def get_inference_transform(image_size: int):
-    import torchvision.transforms as T
-    return T.Compose([
-        T.Grayscale(3),
-        T.Resize((image_size, image_size)),
-        T.ConvertImageDtype(torch.float32)
+    from torchvision.transforms import v2 as Tv2
+    return Tv2.Compose([
+        Tv2.Grayscale(3),
+        Tv2.Resize((image_size, image_size)),
+        Tv2.ToTensor()
     ])
 
 
