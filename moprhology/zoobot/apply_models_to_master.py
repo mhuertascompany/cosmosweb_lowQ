@@ -249,6 +249,19 @@ def run_model(model_path: Path, fallback_labels: List[str], catalog: pd.DataFram
             ids.extend(batch_ids)
 
     predictions = torch.cat(all_probs, dim=0).numpy()
+    num_outputs = predictions.shape[1]
+    if len(label_names) != num_outputs:
+        logging.warning(
+            "Checkpoint produced %d outputs but we have %d label names. "
+            "Adjusting names to match tensor shape.",
+            num_outputs,
+            len(label_names)
+        )
+        if len(label_names) >= num_outputs:
+            label_names = label_names[:num_outputs]
+        else:
+            extras = [f"class_{i}" for i in range(len(label_names), num_outputs)]
+            label_names = label_names + extras
     df = pd.DataFrame(predictions, columns=[f"{name}" for name in label_names])
     df.insert(0, 'id', ids)
     return df
