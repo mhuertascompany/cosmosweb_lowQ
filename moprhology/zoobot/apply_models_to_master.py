@@ -24,25 +24,21 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import albumentations as A
 import numpy as np
 import pandas as pd
 from astropy.io import fits
+from astropy.table import Table
+from PIL import Image
 import torch
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from moprhology.zoobot.train_on_cosmos_visual import (
-    select_rest_frame_filter,
-    To3d,
-)
-from moprhology.zoobot import train_on_cosmos_visual as training_module
-from moprhology.zoobot.generate_master_stamps import ensure_dirs  # reuse helper if needed
-
+from moprhology.zoobot.train_on_cosmos_visual import select_rest_frame_filter
 from zoobot.pytorch.training import finetune
-from zoobot.pytorch.predictions import predict_on_catalog
 
 
 LABEL_SETS: Dict[str, List[str]] = {
@@ -70,7 +66,7 @@ def parse_args() -> argparse.Namespace:
                         help="How stamps are named inside each filter folder.")
     parser.add_argument("--mag-column", default="mag_model_f277w",
                         help="Optional column for magnitude filtering (case-sensitive).")
-    parser.add_argument("--mag-limit", type=float, default=25.0,
+    parser.add_argument("--mag-limit", type=float, default=None,
                         help="Keep objects with mag_column <= mag_limit (set None to skip).")
     parser.add_argument("--ckpt-regular", type=Path, required=True, help="Checkpoint for the regular model.")
     parser.add_argument("--ckpt-family", type=Path, required=True, help="Checkpoint for the family model.")
@@ -81,7 +77,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=224, help="Resize dimension (square).")
     parser.add_argument("--accelerator", default="auto", help="Lightning accelerator (e.g. gpu, cpu).")
     parser.add_argument("--devices", default="auto", help="Devices argument for Lightning.")
-    parser.add_argument("--precision", default="32", help="Precision for Lightning trainer.")
     parser.add_argument("--ignore-missing", action="store_true",
                         help="Skip IDs whose stamp file is missing instead of failing.")
     return parser.parse_args()
@@ -90,33 +85,58 @@ def parse_args() -> argparse.Namespace:
 def load_master_subset(catalog_path: Path, id_col: str, z_col: str, extra_cols: Optional[List[str]] = None) -> pd.DataFrame:
     logging.info("Reading master catalog from %s", catalog_path)
 
+    def to_native(array: np.ndarray) -> np.ndarray:
+        arr = np.asarray(array)
+        if arr.dtype.kind in {"S", "U"}:
+            return arr.astype(str)
+        if arr.dtype.byteorder == ">" or (arr.dtype.byteorder == "=" and np.little_endian is False):
+            dtype = arr.dtype.newbyteorder("<")
+            arr = arr.byteswap().view(dtype)
+        return arr
+
     def fetch_column(hdus, column: str) -> np.ndarray:
         for hdu in hdus[1:]:
             data = getattr(hdu, "data", None)
-            if data is None or column not in data.names:
+            if data is None or column not in getattr(data, "names", []):
                 continue
-            arr = np.asarray(data[column])
-            if arr.dtype.kind == "S":  # bytes -> str
-                return arr.astype(str)
-            if arr.dtype.byteorder == ">" or (arr.dtype.byteorder == "=" and np.little_endian is False):
-                arr = arr.byteswap().view(arr.dtype.newbyteorder('<'))
-            return arr
+            table = Table(data)
+            if column in table.colnames:
+                return to_native(table[column])
         raise ValueError(f"Column {column} not found in FITS file {catalog_path}")
 
     with fits.open(catalog_path, memmap=True) as hdus:
-        data = {
-            id_col: fetch_column(hdus, id_col),
-            z_col: fetch_column(hdus, z_col)
-        }
+        id_values = fetch_column(hdus, id_col)
+        data = {id_col: id_values}
+        length = len(id_values)
+        data[z_col] = fetch_column(hdus, z_col)
         if extra_cols:
             for col in extra_cols:
                 try:
                     data[col] = fetch_column(hdus, col)
                 except ValueError:
                     logging.warning("Column %s not found; filling NaNs.", col)
-                    data[col] = np.full_like(data[id_col], np.nan, dtype=float)
+                    data[col] = np.full(length, np.nan, dtype=float)
 
     return pd.DataFrame(data)
+
+
+def sanitize_id(value):
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)) and np.isfinite(value):
+        if float(value).is_integer():
+            return int(value)
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            numeric = float(stripped)
+            if numeric.is_integer():
+                return int(numeric)
+            return int(numeric)
+        except ValueError:
+            return stripped
+    return value
 
 
 def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
@@ -131,12 +151,13 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
         filter_name = select_rest_frame_filter(float(z))
         if filter_name is None:
             continue
-        file_path = stamp_root / filter_name / args.filename_template.format(filter=filter_name, id=obj_id)
+        clean_id = sanitize_id(obj_id)
+        file_path = stamp_root / filter_name / args.filename_template.format(filter=filter_name, id=clean_id)
         if not file_path.exists():
             missing += 1
             continue
         rows.append({
-            'id': str(obj_id),
+            'id': str(clean_id),
             'file_loc': str(file_path),
             'filter_used': filter_name,
             args.redshift_column: z
@@ -145,39 +166,92 @@ def build_inference_catalog(df: pd.DataFrame, args: argparse.Namespace) -> pd.Da
     return pd.DataFrame(rows)
 
 
+class StampDataset(Dataset):
+    def __init__(self, catalog: pd.DataFrame, transform):
+        self.catalog = catalog.reset_index(drop=True)
+        self.transform = transform
+
+    def __len__(self) -> int:
+        return len(self.catalog)
+
+    def __getitem__(self, idx: int):
+        row = self.catalog.iloc[idx]
+        image = Image.open(row['file_loc']).convert('RGB')
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, row['id']
+
 
 def get_inference_transform(image_size: int):
-    from torchvision.transforms import v2 as Tv2
-    return Tv2.Compose([
-        Tv2.Grayscale(3),
-        Tv2.Resize((image_size, image_size)),
-        Tv2.ToTensor()
+    return transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize(image_size, interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.CenterCrop(image_size),
+        transforms.ToTensor()
     ])
 
 
-def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+def choose_device(accelerator: str, devices: str) -> torch.device:
+    accel = accelerator.lower()
+    if accel in {'gpu', 'cuda'} and torch.cuda.is_available():
+        return torch.device('cuda')
+    if accel == 'cpu':
+        return torch.device('cpu')
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    return torch.device('cpu')
+
+
+def determine_label_names(model: finetune.FinetuneableZoobotClassifier, fallback: List[str]) -> List[str]:
+    for attr in ('label_names', 'class_names'):
+        names = getattr(model, attr, None)
+        if names:
+            return list(names)
+    num_classes = getattr(model, 'num_classes', None)
+    if num_classes is not None and num_classes != len(fallback):
+        logging.warning(
+            "Checkpoint reports %d classes but fallback expects %d. "
+            "Creating generic class names.", num_classes, len(fallback)
+        )
+        return [f"class_{i}" for i in range(num_classes)]
+    return fallback
+
+
+def run_model(model_path: Path, fallback_labels: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
     logging.info("Loading model from %s", model_path)
     model = finetune.FinetuneableZoobotClassifier.load_from_checkpoint(str(model_path), strict=False)
-    transform = get_inference_transform(args.image_size)
+    model.eval()
+    device = choose_device(args.accelerator, str(args.devices))
+    model.to(device)
 
-    catalog = catalog.rename(columns={'id': 'id_str'})
-    preds = predict_on_catalog.predict(
-        catalog,
-        model,
-        label_cols=label_names,
-        inference_transform=transform,
-        save_loc=None,
-        datamodule_kwargs={
-            'batch_size': args.batch_size,
-            'num_workers': args.num_workers
-        },
-        trainer_kwargs={
-            'accelerator': args.accelerator,
-            'devices': args.devices,
-            'precision': args.precision
-        }
+    label_names = determine_label_names(model, fallback_labels)
+    transform = get_inference_transform(args.image_size)
+    dataset = StampDataset(catalog, transform)
+    if len(dataset) == 0:
+        raise RuntimeError("Inference catalog is empty. Nothing to run.")
+    loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=device.type == 'cuda'
     )
-    return preds
+
+    all_probs = []
+    ids = []
+    with torch.no_grad():
+        for batch_images, batch_ids in loader:
+            batch_images = batch_images.to(device)
+            logits = model(batch_images)
+            if logits.dim() == 1:
+                logits = logits.unsqueeze(0)
+            probs = torch.softmax(logits, dim=1)
+            all_probs.append(probs.cpu())
+            ids.extend(batch_ids)
+
+    predictions = torch.cat(all_probs, dim=0).numpy()
+    df = pd.DataFrame(predictions, columns=[f"{name}" for name in label_names])
+    df.insert(0, 'id', ids)
+    return df
 
 
 def main():
@@ -192,6 +266,8 @@ def main():
          logging.info("Magnitude cut %s <= %.2f reduced catalog from %d to %d objects.",
                       args.mag_column, args.mag_limit, before, len(df_master))
     inference_catalog = build_inference_catalog(df_master, args)
+    if inference_catalog.empty:
+        raise RuntimeError("No valid stamp entries prepared for inference.")
 
     outputs = {'id': inference_catalog['id'].astype(str)}
 
@@ -202,11 +278,15 @@ def main():
     ]
 
     for label_set, ckpt in model_configs:
-        label_names = LABEL_SETS[label_set]
-        logging.info("Running %s model (%d classes)", label_set, len(label_names))
-        preds = run_model(ckpt, label_names, inference_catalog[['id', 'file_loc']], args)
-        preds = preds.rename(columns={name: f"{label_set}_{name}" for name in label_names})
-        outputs.update({col: preds[col].values for col in preds.columns if col not in {'id'}})
+        fallback = LABEL_SETS[label_set]
+        logging.info("Running %s model (fallback %d classes)", label_set, len(fallback))
+        preds = run_model(ckpt, fallback, inference_catalog[['id', 'file_loc']], args)
+        renamed = {name: f"{label_set}_{name}" for name in preds.columns if name != 'id'}
+        preds = preds.rename(columns=renamed)
+        for col in preds.columns:
+            if col == 'id':
+                continue
+            outputs[col] = preds[col].values
 
     final_df = pd.DataFrame(outputs)
     final_df['id'] = final_df['id'].astype(str)
