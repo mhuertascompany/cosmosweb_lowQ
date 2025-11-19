@@ -326,6 +326,10 @@ def main():
             canonical = canonical_label(label_set, name, idx)
             rename_map[name] = f"{label_set}_{canonical}"
         preds = preds.rename(columns=rename_map)
+        values_only = preds.drop(columns=['id'])
+        if not values_only.empty:
+            values_only = values_only.groupby(level=0, axis=1).sum()
+        preds = pd.concat([preds[['id']], values_only], axis=1)
         for col in preds.columns:
             if col == 'id':
                 continue
