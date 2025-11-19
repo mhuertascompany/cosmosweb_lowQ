@@ -217,7 +217,32 @@ def determine_label_names(model: finetune.FinetuneableZoobotClassifier, fallback
     return fallback
 
 
-def run_model(model_path: Path, fallback_labels: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+def canonical_regular_label(label_name: str, index: int) -> str:
+    upper = label_name.upper()
+    mappings = [
+        ('EARLY', 'EARLY_DISK'),
+        ('EDISK', 'EARLY_DISK'),
+        ('LATE', 'LATE_DISK'),
+        ('LDISK', 'LATE_DISK'),
+        ('S0', 'S0'),
+        ('ELL', 'ELL'),
+    ]
+    for key, value in mappings:
+        if key in upper:
+            return value
+    fallback_order = ['ELL', 'S0', 'EARLY_DISK', 'LATE_DISK']
+    if label_name.startswith('class_') and index < len(fallback_order):
+        return fallback_order[index]
+    return label_name
+
+
+def canonical_label(label_set: str, label_name: str, index: int) -> str:
+    if label_set == 'regular':
+        return canonical_regular_label(label_name, index)
+    return label_name
+
+
+def run_model(model_path: Path, fallback_labels: List[str], catalog: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.DataFrame, List[str]]:
     logging.info("Loading model from %s", model_path)
     model = finetune.FinetuneableZoobotClassifier.load_from_checkpoint(str(model_path), strict=False)
     model.eval()
@@ -264,7 +289,7 @@ def run_model(model_path: Path, fallback_labels: List[str], catalog: pd.DataFram
             label_names = label_names + extras
     df = pd.DataFrame(predictions, columns=[f"{name}" for name in label_names])
     df.insert(0, 'id', ids)
-    return df
+    return df, label_names
 
 
 def main():
@@ -293,9 +318,14 @@ def main():
     for label_set, ckpt in model_configs:
         fallback = LABEL_SETS[label_set]
         logging.info("Running %s model (fallback %d classes)", label_set, len(fallback))
-        preds = run_model(ckpt, fallback, inference_catalog[['id', 'file_loc']], args)
-        renamed = {name: f"{label_set}_{name}" for name in preds.columns if name != 'id'}
-        preds = preds.rename(columns=renamed)
+        preds, label_names = run_model(ckpt, fallback, inference_catalog[['id', 'file_loc']], args)
+        rename_map = {}
+        for idx, name in enumerate(label_names):
+            if name == 'id':
+                continue
+            canonical = canonical_label(label_set, name, idx)
+            rename_map[name] = f"{label_set}_{canonical}"
+        preds = preds.rename(columns=rename_map)
         for col in preds.columns:
             if col == 'id':
                 continue
