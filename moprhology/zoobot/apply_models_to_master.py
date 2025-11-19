@@ -161,19 +161,16 @@ def run_model(model_path: Path, label_names: List[str], catalog: pd.DataFrame, a
     transform = get_inference_transform(args.image_size)
 
     catalog = catalog.rename(columns={'id': 'id_str'})
-    kwargs = {
-        'batch_size': args.batch_size,
-        'num_workers': args.num_workers
-    }
-    if transform is not None:
-        kwargs['test_transform'] = transform
     preds = predict_on_catalog.predict(
         catalog,
         model,
         label_cols=label_names,
-        inference_transform=None,
+        inference_transform=transform,
         save_loc=None,
-        datamodule_kwargs=kwargs,
+        datamodule_kwargs={
+            'batch_size': args.batch_size,
+            'num_workers': args.num_workers
+        },
         trainer_kwargs={
             'accelerator': args.accelerator,
             'devices': args.devices,
