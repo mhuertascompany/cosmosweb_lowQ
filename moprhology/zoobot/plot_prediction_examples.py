@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--redshift-column", default="zfinal", help="Redshift column name in master catalog.")
     parser.add_argument("--mag-column", default=None, help="Optional magnitude column for filtering.")
     parser.add_argument("--mag-limit", type=float, default=None, help="If set, keep rows with mag <= limit when building lookup.")
+    parser.add_argument("--min-prob", type=float, default=0.0,
+                        help="Only show examples whose winning probability >= this value.")
     return parser.parse_args()
 
 
@@ -120,12 +122,15 @@ def choose_examples(
     class_columns: List[str],
     samples_per_class: int,
     rng: random.Random,
+    min_prob: float,
 ) -> Dict[str, pd.DataFrame]:
     preds = predictions.copy()
     preds["pred_class"] = preds[class_columns].idxmax(axis=1)
     selections: Dict[str, pd.DataFrame] = {}
     for col in class_columns:
         candidates = preds[preds["pred_class"] == col]
+        if min_prob > 0:
+            candidates = candidates[candidates[col] >= min_prob]
         if candidates.empty:
             selections[col] = candidates
             continue
@@ -200,7 +205,7 @@ def main():
         raise RuntimeError("No stamp paths resolved; cannot plot examples.")
 
     rng = random.Random(args.seed)
-    selections = choose_examples(available, class_columns, args.samples_per_class, rng)
+    selections = choose_examples(available, class_columns, args.samples_per_class, rng, args.min_prob)
     class_name_map = {f"{prefix}{suffix}": suffix.replace("_", " ") for suffix in label_suffixes}
     output = args.output.expanduser()
     plot_examples(selections, class_name_map, output)

@@ -329,6 +329,11 @@ def main():
         values_only = preds.drop(columns=['id'])
         if not values_only.empty:
             values_only = values_only.groupby(level=0, axis=1).sum()
+            if label_set == 'regular':
+                row_sums = values_only.sum(axis=1)
+                nonzero = row_sums > 0
+                if nonzero.any():
+                    values_only.loc[nonzero] = values_only.loc[nonzero].div(row_sums[nonzero], axis=0)
         preds = pd.concat([preds[['id']], values_only], axis=1)
         for col in preds.columns:
             if col == 'id':
