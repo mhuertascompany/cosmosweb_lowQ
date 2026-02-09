@@ -1,0 +1,24 @@
+#!/bin/bash
+#SBATCH --job-name=group_field_gallery
+#SBATCH --output=/n03data/huertas/COSMOS-Web/ilbert_finetune/group_field_gallery.out
+#SBATCH --error=/n03data/huertas/COSMOS-Web/ilbert_finetune/group_field_gallery.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --nodelist=n03
+#SBATCH --cpus-per-task=4
+#SBATCH --time=04:00:00
+
+source /n03data/huertas/python/miniconda3/etc/profile.d/conda.sh
+conda activate /n03data/huertas/python/miniconda3/envs/cosmos_visual/
+
+cd /n03data/huertas/python/cosmosweb_lowQ
+
+python /n03data/huertas/python/cosmosweb_lowQ/moprhology/zoobot/plot_group_field_galleries.py \
+  --catalog /n07data/ilbert/COSMOS-Web/photoz_MASTER_v3.1.0/MORPHO/COSMOSWeb_mastercatalog_v1.fits \
+  --morphology /n03data/huertas/COSMOS-Web/ilbert_finetune/ilbert_visual_zoobot_morphology.fits \
+  --group-dir /n03data/huertas/COSMOS-Web/groups \
+  --stamp-root /n03data/huertas/COSMOS-Web/zoobot/stamps_ilbert \
+  --output-dir /n03data/huertas/COSMOS-Web/lowmass_Q/galleries \
+  --samples-per-class 12 \
+  --mass-bins 8-9,9-10,10-10.5 \
+  --seed 42
