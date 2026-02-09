@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
 def to_native(arr: np.ndarray) -> np.ndarray:
     arr = np.asarray(arr)
     if arr.dtype.byteorder == '>' or (arr.dtype.byteorder == '=' and np.little_endian is False):
-        arr = arr.byteswap().newbyteorder()
+        arr = arr.byteswap().view(arr.dtype.newbyteorder('<'))
     return arr
 
 
