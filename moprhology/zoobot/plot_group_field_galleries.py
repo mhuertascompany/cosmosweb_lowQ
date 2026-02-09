@@ -112,10 +112,9 @@ def build_clean_mask(catalog: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.
     finite_mask = np.isfinite(nuv_minus_r) & np.isfinite(r_minus_j) & np.isfinite(mass_log)
     clean_mask &= finite_mask
 
-    low_mass_mask = mass_log < 10.0
     quiescent_mask = (nuv_minus_r > 3.1) & (nuv_minus_r > 3.0 * r_minus_j + 1.0)
 
-    final_mask = clean_mask & low_mass_mask & quiescent_mask
+    final_mask = clean_mask & quiescent_mask
     return final_mask, mass_log, z, nuv_minus_r
 
 
