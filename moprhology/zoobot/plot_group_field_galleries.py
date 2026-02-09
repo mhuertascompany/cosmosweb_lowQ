@@ -232,7 +232,7 @@ def plot_gallery(
             for ax in axes[n:]:
                 ax.axis('off')
 
-            fig.suptitle(f"{title} - {cls}", fontsize=14, y=1.02)
+            fig.suptitle(f"Morphology: {cls}", fontsize=14, y=1.02)
             fig.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
